@@ -9,6 +9,7 @@ from UI.ui_main import Ui_MainWindow
 from UI.ui_add_session_dialog import Ui_AddSessionDialog
 from UI.ui_add_cinema_dialog import Ui_AddCinemaDialog
 from UI.ui_add_hall_dialog import Ui_AddHallDialog
+from UI.ui_add_film_dialog import Ui_AdFilmDialog
 
 
 class Cinema(QMainWindow, Ui_MainWindow):
@@ -48,6 +49,8 @@ class AddSessionDialog(QDialog, Ui_AddSessionDialog):
         self.film_tool_btn.clicked.connect(self.add_film)
 
         self.init_cinemas()
+        self.init_halls()
+        self.init_films()
 
         self.cinema_combo_box.currentTextChanged.connect(self.init_halls)
 
@@ -62,9 +65,8 @@ class AddSessionDialog(QDialog, Ui_AddSessionDialog):
             self.cinema_combo_box.addItems(cinemas)
             self.cinema_combo_box.setCurrentIndex(0)
 
+        cur.close()
         con.close()
-
-        self.init_halls()
 
     def init_halls(self):
         self.hall_combo_box.clear()
@@ -83,6 +85,20 @@ class AddSessionDialog(QDialog, Ui_AddSessionDialog):
                 halls = list(map(lambda data: data[0], halls))
                 self.hall_combo_box.addItems(halls)
 
+            cur.close()
+            con.close()
+
+    def init_films(self):
+        self.film_combo_box.clear()
+        con = sqlite3.connect(data_base_path)
+        cur = con.cursor()
+        films = cur.execute('SELECT name FROM films').fetchall()
+        if films:
+            films = list(map(lambda data: data[0], films))
+            self.film_combo_box.addItems(films)
+        cur.close()
+        con.close()
+
     def click_button_box(self, btn):
         btn_text = btn.text()
         if btn_text == 'OK':
@@ -92,16 +108,22 @@ class AddSessionDialog(QDialog, Ui_AddSessionDialog):
 
     def add_cinema(self):
         add_cinema_dialog = AddCinemaDialog()
+        add_cinema_dialog.accepted.connect(self.init_cinemas)
         add_cinema_dialog.exec()
-        add_cinema_dialog.finished.connect(self.init_cinemas)
 
     def add_hall(self):
-        add_hall_dialog = AddHallDialog()
+        current_cinema = self.cinema_combo_box.currentText()
+        if current_cinema:
+            add_hall_dialog = AddHallDialog(current_cinema)
+        else:
+            add_hall_dialog = AddHallDialog()
+        add_hall_dialog.accepted.connect(self.init_halls)
         add_hall_dialog.exec()
-        add_hall_dialog.finished.connect(self.init_cinemas)
 
     def add_film(self):
-        pass
+        add_film_dialog = AddFilmDialog()
+        add_film_dialog.accepted.connect(self.init_films)
+        add_film_dialog.exec()
 
 
 class AddCinemaDialog(QDialog, Ui_AddCinemaDialog):
@@ -124,15 +146,20 @@ class AddCinemaDialog(QDialog, Ui_AddCinemaDialog):
                     '''INSERT INTO cinemas(name, address) VALUES (?, ?)''', (name, address,)
                 )
                 con.commit()
+                cur.close()
                 con.close()
-        self.close()
+                self.accept()
+        elif btn_text == 'Cancel':
+            self.reject()
 
 
 class AddHallDialog(QDialog, Ui_AddHallDialog):
-    def __init__(self):
+    def __init__(self, cinema=None):
         super().__init__()
         self.setupUi(self)
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+
+        self.cinema = cinema
         self.init_cinemas()
         self.button_box.clicked.connect(self.click_button_box)
 
@@ -154,8 +181,11 @@ class AddHallDialog(QDialog, Ui_AddHallDialog):
                     (cinema_name, hall_bytes, hall_name)
                 )
                 con.commit()
+                cur.close()
                 con.close()
-        self.close()
+                self.accept()
+        elif btn_text == 'Cancel':
+            self.reject()
 
     def init_cinemas(self):
         con = sqlite3.connect(data_base_path)
@@ -166,9 +196,39 @@ class AddHallDialog(QDialog, Ui_AddHallDialog):
         if cinemas:
             cinemas = list(map(lambda data: data[0], cinemas))
             self.cinema_combo_box.addItems(cinemas)
-            self.cinema_combo_box.setCurrentIndex(0)
+            if self.cinema:
+                self.cinema_combo_box.setCurrentText(self.cinema)
+            else:
+                self.cinema_combo_box.setCurrentIndex(0)
 
         con.close()
+
+
+class AddFilmDialog(QDialog, Ui_AdFilmDialog):
+    def __init__(self):
+        super().__init__()
+        self.setupUi(self)
+        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+        self.button_box.clicked.connect(self.click_button_box)
+
+    def click_button_box(self, btn):
+        btn_text = btn.text()
+        if btn_text == 'OK':
+            name = self.name_line_edit.text()
+            description = self.description_edit.toPlainText()
+            if name and description:
+                con = sqlite3.connect(data_base_path)
+                cur = con.cursor()
+                cur.execute(
+                    '''INSERT INTO films(name, description) VALUES (?, ?)''',
+                    (name, description,)
+                )
+                con.commit()
+                cur.close()
+                con.close()
+                self.accept()
+        elif btn_text == 'Cancel':
+            self.reject()
 
 
 if __name__ == '__main__':
