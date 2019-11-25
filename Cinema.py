@@ -5,12 +5,15 @@ import numpy as np
 import pickle
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem
 from PyQt5.QtCore import Qt, QDate, QTime, QDateTime
+from PyQt5.QtGui import QImage, QPixmap
+from PIL import Image, ImageQt, ImageDraw, ImageFont
 
 from UI.ui_main import Ui_MainWindow
 from UI.ui_add_session_dialog import Ui_AddSessionDialog
 from UI.ui_add_cinema_dialog import Ui_AddCinemaDialog
 from UI.ui_add_hall_dialog import Ui_AddHallDialog
 from UI.ui_add_film_dialog import Ui_AdFilmDialog
+from UI.ui_details_session_dialog import Ui_DetalisSessionDialog
 
 
 class Cinema(QMainWindow, Ui_MainWindow):
@@ -22,6 +25,8 @@ class Cinema(QMainWindow, Ui_MainWindow):
         self.open_session_btn.clicked.connect(self.open_session)
         self.remove_session_btn.clicked.connect(self.remove_session)
         self.add_sesion_btn.clicked.connect(self.add_session)
+
+        self.sessions_table.cellClicked.connect(self.cell_click)
 
     def load_data_base(self):
         con = sqlite3.connect(data_base_path)
@@ -66,7 +71,32 @@ class Cinema(QMainWindow, Ui_MainWindow):
         con.close()
 
     def open_session(self):
-        pass
+        row = self.sessions_table.currentRow()
+
+        if row != -1:
+            film_name = self.sessions_table.item(row, 0).text()
+            cinema_name = self.sessions_table.item(row, 1).text()
+            hall_name = self.sessions_table.item(row, 2).text()
+            date = self.sessions_table.item(row, 3).text()
+            time = self.sessions_table.item(row, 4).text()
+
+            con = sqlite3.connect(data_base_path)
+            cur = con.cursor()
+
+            id_session = cur.execute(
+                '''SELECT id FROM sessions WHERE
+                film = (SELECT id FROM films WHERE name = ?) AND
+                date = ? AND time = ? AND
+                hall = (SELECT id FROM halls WHERE
+                 cinema = (SELECT id FROM cinemas WHERE name = ?) AND
+                 name = ?)''',
+                (film_name, date, time, cinema_name, hall_name,)).fetchone()[0]
+
+            cur.close()
+            con.close()
+
+            details_session_dialog = DetailsSessionDialog(id_session)
+            # details_session_dialog.exec()
 
     def remove_session(self):
         pass
@@ -75,6 +105,9 @@ class Cinema(QMainWindow, Ui_MainWindow):
         add_session_dialog = AddSessionDialog()
         add_session_dialog.accepted.connect(self.load_data_base)
         add_session_dialog.exec()
+
+    def cell_click(self, row):
+        self.sessions_table.selectRow(row)
 
 
 class AddSessionDialog(QDialog, Ui_AddSessionDialog):
@@ -300,6 +333,71 @@ class AddFilmDialog(QDialog, Ui_AdFilmDialog):
                 self.accept()
         elif btn_text == 'Cancel':
             self.reject()
+
+
+class DetailsSessionDialog(QDialog, Ui_DetalisSessionDialog):
+    def __init__(self, id_session):
+        super().__init__()
+        self.setupUi(self)
+        self.id_session = id_session
+        self.size_font = 25
+        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+
+        self.initUI()
+
+    def initUI(self):
+        con = sqlite3.connect(data_base_path)
+        cur = con.cursor()
+
+        session_data = cur.execute('''SELECT id, film, date, time, hall FROM sessions WHERE
+        id = ?''', (self.id_session,)).fetchall()[0]
+
+        id_session = session_data[0]
+        name_film = session_data[1]
+        date = session_data[2]
+        time = session_data[3]
+        id_hall = session_data[4]
+
+        hall_bytes = cur.execute(
+            '''SELECT hall FROM halls WHERE id = ?''', (id_hall,)
+        ).fetchone()[0]
+
+        hall_array = pickle.loads(hall_bytes)
+        font = ImageFont.truetype("arial.ttf", self.size_font)
+        height_text = self.size_font
+        max_width_text_row, max_width_text_col = 0, 0
+
+        image = Image.new('RGB', (1000, 1000))
+        draw = ImageDraw.Draw(image)
+
+        shape = hall_array.shape
+
+        for num in range(shape[0]):
+            width_text, height_text = draw.textsize(str(num + 1), font=font)
+            if width_text > max_width_text_row:
+                max_width_text_row = width_text
+
+        for num in range(shape[1]):
+            width_text, height_text = draw.textsize(str(num + 1), font=font)
+            if width_text > max_width_text_col:
+                max_width_text_col = width_text
+
+        size_item = (max(max_width_text_row, max_width_text_col), height_text)
+
+        for row in range(1, shape[0] + 1):
+            draw.text((0, row * height_text), str(row), font=font)
+
+        for col in range(shape[1]):
+            draw.text((col * max_width_text_col + max_width_text_row, 0),
+                      str(col + 1), font=font)
+
+        size_img = (shape[0] * size_item, shape[1] * size_item)
+
+        # for x in range(self.size_font, size_img[0] + self.size_font, self.size_font):
+        #     for y in range(self.size_font, size_img[1] + self.size_font, self.size_font):
+        #         draw.rectangle([(x, y), (x + self.size_font - 1, y + self.size_font - 1)])
+
+        image.show()
 
 
 if __name__ == '__main__':
