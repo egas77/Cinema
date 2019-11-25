@@ -3,7 +3,7 @@ import sqlite3
 import datetime
 import numpy as np
 import pickle
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QWidget, QTableWidgetItem
 from PyQt5.QtCore import Qt, QDate, QTime, QDateTime
 from PyQt5.QtGui import QImage, QPixmap
 from PIL import Image, ImageQt, ImageDraw, ImageFont
@@ -33,7 +33,7 @@ class Cinema(QMainWindow, Ui_MainWindow):
         cur = con.cursor()
 
         sessions = cur.execute(
-            '''SELECT film, date, time, hall FROM sessions'''
+            '''SELECT film, date, time, hall_name, cinema FROM sessions'''
         ).fetchall()
 
         if sessions:
@@ -44,19 +44,14 @@ class Cinema(QMainWindow, Ui_MainWindow):
             head = ['Фильм', 'Кинотеатр', 'Зал', 'Дата', 'Время']
             self.sessions_table.setHorizontalHeaderLabels(head)
             for session_number in range(len(sessions)):
-                film_id, date_iso, time_iso, hall_id = sessions[session_number]
+                film_id, date_iso, time_iso, hall_name, cinema = sessions[session_number]
 
                 film_name = cur.execute(
                     '''SELECT name FROM films WHERE id = ?''', (film_id,)
                 ).fetchall()[0][0]
 
                 cinema_name = cur.execute(
-                    '''SELECT name FROM cinemas WHERE
-                     id = (SELECT cinema FROM halls WHERE id = ?)''', (hall_id,)
-                ).fetchall()[0][0]
-
-                hall_name = cur.execute(
-                    '''SELECT name FROM halls WHERE id = ?''', (hall_id,)
+                    '''SELECT name FROM cinemas WHERE id = ?''', (cinema,)
                 ).fetchall()[0][0]
 
                 self.sessions_table.setItem(session_number, 0, QTableWidgetItem(film_name))
@@ -87,19 +82,44 @@ class Cinema(QMainWindow, Ui_MainWindow):
                 '''SELECT id FROM sessions WHERE
                 film = (SELECT id FROM films WHERE name = ?) AND
                 date = ? AND time = ? AND
-                hall = (SELECT id FROM halls WHERE
-                 cinema = (SELECT id FROM cinemas WHERE name = ?) AND
-                 name = ?)''',
+                cinema = (SELECT id FROM cinemas WHERE name = ?) AND
+                hall_name = ?''',
                 (film_name, date, time, cinema_name, hall_name,)).fetchone()[0]
 
             cur.close()
             con.close()
 
-            details_session_dialog = DetailsSessionDialog(id_session)
-            # details_session_dialog.exec()
+            self.details_session_dialog = DetailsSessionDialog(id_session)
+            self.details_session_dialog.show()
 
     def remove_session(self):
-        pass
+        row = self.sessions_table.currentRow()
+
+        if row != -1:
+            film_name = self.sessions_table.item(row, 0).text()
+            cinema_name = self.sessions_table.item(row, 1).text()
+            hall_name = self.sessions_table.item(row, 2).text()
+            date = self.sessions_table.item(row, 3).text()
+            time = self.sessions_table.item(row, 4).text()
+
+            con = sqlite3.connect(data_base_path)
+            cur = con.cursor()
+
+            id_session = cur.execute(
+                '''SELECT id FROM sessions WHERE
+                film = (SELECT id FROM films WHERE name = ?) AND
+                date = ? AND time = ? AND
+                cinema = (SELECT id FROM cinemas WHERE name = ?) AND
+                hall_name = ?''',
+                (film_name, date, time, cinema_name, hall_name,)).fetchone()[0]
+
+            cur.execute('DELETE FROM sessions WHERE id = ?', (id_session,))
+
+            con.commit()
+            cur.close()
+            con.close()
+
+            self.load_data_base()
 
     def add_session(self):
         add_session_dialog = AddSessionDialog()
@@ -186,8 +206,12 @@ class AddSessionDialog(QDialog, Ui_AddSessionDialog):
                 con = sqlite3.connect(data_base_path)
                 cur = con.cursor()
 
-                hall_id = cur.execute(
-                    '''SELECT id FROM halls WHERE
+                cinema = cur.execute(
+                    '''SELECT id FROM cinemas WHERE name = ?''', (cinema_name,)
+                ).fetchall()[0][0]
+
+                hall = cur.execute(
+                    '''SELECT hall FROM halls WHERE
                      cinema = (SELECT id FROM cinemas WHERE name = ?) AND
                      name = ?''', (cinema_name, hall_name,)
                 ).fetchall()[0][0]
@@ -196,16 +220,26 @@ class AddSessionDialog(QDialog, Ui_AddSessionDialog):
                     '''SELECT id FROM films WHERE name = ?''', (film_name,)
                 ).fetchall()[0][0]
 
-                cur.execute(
-                    '''INSERT INTO sessions(film, date, time, hall) VALUES (?, ?, ?, ?)''',
-                    (film_id, date, time, hall_id)
-                )
+                if not cur.execute('''SELECT * FROM sessions WHERE
+                                    film = ? AND
+                                    date = ? AND
+                                    time = ? AND
+                                    hall = ? AND
+                                    hall_name = ? AND
+                                    cinema = ?
+                ''',
+                                   (film_id, date, time, hall, hall_name, cinema,)).fetchall():
+                    cur.execute(
+                        '''INSERT INTO sessions(film, date, time, hall, hall_name, cinema)
+                         VALUES (?, ?, ?, ?, ?, ?)''',
+                        (film_id, date, time, hall, hall_name, cinema,)
+                    )
 
-                con.commit()
-                cur.close()
-                con.close()
+                    con.commit()
+                    cur.close()
+                    con.close()
 
-                self.accept()
+                    self.accept()
         elif btn_text == 'Cancel':
             self.reject()
 
@@ -340,10 +374,36 @@ class DetailsSessionDialog(QDialog, Ui_DetalisSessionDialog):
         super().__init__()
         self.setupUi(self)
         self.id_session = id_session
-        self.size_font = 25
+        self.size_font = 30
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+        self.buy_ticket_btn.clicked.connect(self.buy_ticket)
 
         self.initUI()
+
+    def buy_ticket(self):
+        row = self.row_edit.value()
+        col = self.col_edit.value()
+
+        con = sqlite3.connect(data_base_path)
+        cur = con.cursor()
+
+        hall_bytes = cur.execute(
+            '''SELECT hall FROM sessions WHERE id = ?''', (self.id_session,)
+        ).fetchone()[0]
+
+        hall_array = pickle.loads(hall_bytes)
+        shape = hall_array.shape
+
+        if row <= shape[0] and col <= shape[1]:
+            hall_array[row - 1][col - 1] = 1
+            hall_bytes = hall_array.dumps()
+            cur.execute(
+                '''UPDATE sessions SET hall = ? WHERE id = ?''', (hall_bytes, self.id_session,)
+            )
+            con.commit()
+            cur.close()
+            con.close()
+            self.resizeEvent(None)
 
     def initUI(self):
         con = sqlite3.connect(data_base_path)
@@ -352,14 +412,26 @@ class DetailsSessionDialog(QDialog, Ui_DetalisSessionDialog):
         session_data = cur.execute('''SELECT id, film, date, time, hall FROM sessions WHERE
         id = ?''', (self.id_session,)).fetchall()[0]
 
-        id_session = session_data[0]
-        name_film = session_data[1]
+        name_film = cur.execute(
+            '''SELECT name FROM films WHERE id = ?''', (session_data[1],)
+        ).fetchone()[0]
         date = session_data[2]
         time = session_data[3]
-        id_hall = session_data[4]
+        self.id_hall = session_data[4]
+
+        self.name_film_label.setText(name_film)
+        self.date_label.setText(date)
+        self.time_label.setText(time)
+
+    def resizeEvent(self, event):
+        self.load_image_hall()
+
+    def load_image_hall(self):
+        con = sqlite3.connect(data_base_path)
+        cur = con.cursor()
 
         hall_bytes = cur.execute(
-            '''SELECT hall FROM halls WHERE id = ?''', (id_hall,)
+            '''SELECT hall FROM sessions WHERE id = ?''', (self.id_session,)
         ).fetchone()[0]
 
         hall_array = pickle.loads(hall_bytes)
@@ -382,8 +454,6 @@ class DetailsSessionDialog(QDialog, Ui_DetalisSessionDialog):
             if width_text > max_width_text_col:
                 max_width_text_col = width_text
 
-        size_item = (max(max_width_text_row, max_width_text_col), height_text)
-
         for row in range(1, shape[0] + 1):
             draw.text((0, row * height_text), str(row), font=font)
 
@@ -391,13 +461,26 @@ class DetailsSessionDialog(QDialog, Ui_DetalisSessionDialog):
             draw.text((col * max_width_text_col + max_width_text_row, 0),
                       str(col + 1), font=font)
 
-        size_img = (shape[0] * size_item, shape[1] * size_item)
+        size_img = (max_width_text_row + max_width_text_col * shape[1],
+                    height_text + height_text * shape[0])
 
-        # for x in range(self.size_font, size_img[0] + self.size_font, self.size_font):
-        #     for y in range(self.size_font, size_img[1] + self.size_font, self.size_font):
-        #         draw.rectangle([(x, y), (x + self.size_font - 1, y + self.size_font - 1)])
+        for x, col in zip(range(max_width_text_row, size_img[0], max_width_text_col),
+                          range(shape[1])):
+            for y, row in zip(range(height_text, size_img[1], height_text), range(shape[0])):
+                draw.rectangle([(x, y), (x + max_width_text_col - 1, y + height_text - 1)])
+                elem = hall_array[row][col]
+                if elem == 1:
+                    draw.line([(x, y), (x + max_width_text_col - 1, y + height_text - 1)],
+                              fill=(255, 0, 0))
+                    draw.line([(x, y + height_text - 1), (x + max_width_text_col - 1, y)],
+                              fill=(255, 0, 0))
 
-        image.show()
+        image = image.crop((0, 0, *size_img))
+
+        image_qt = ImageQt.ImageQt(image)
+        pixmap = QPixmap.fromImage(image_qt)
+        pixmap = pixmap.scaled(self.img_cont.size(), Qt.KeepAspectRatio)
+        self.img_cont.setPixmap(pixmap)
 
 
 if __name__ == '__main__':
