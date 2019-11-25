@@ -1,9 +1,10 @@
 import sys
 import sqlite3
+import datetime
 import numpy as np
 import pickle
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem
+from PyQt5.QtCore import Qt, QDate, QTime, QDateTime
 
 from UI.ui_main import Ui_MainWindow
 from UI.ui_add_session_dialog import Ui_AddSessionDialog
@@ -16,13 +17,53 @@ class Cinema(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        self.load_data_base()
 
         self.open_session_btn.clicked.connect(self.open_session)
         self.remove_session_btn.clicked.connect(self.remove_session)
         self.add_sesion_btn.clicked.connect(self.add_session)
 
     def load_data_base(self):
-        pass
+        con = sqlite3.connect(data_base_path)
+        cur = con.cursor()
+
+        sessions = cur.execute(
+            '''SELECT film, date, time, hall FROM sessions'''
+        ).fetchall()
+
+        if sessions:
+            self.sessions_table.clear()
+            self.sessions_table.setRowCount(len(sessions))
+            self.sessions_table.setColumnCount(5)
+
+            head = ['Фильм', 'Кинотеатр', 'Зал', 'Дата', 'Время']
+            self.sessions_table.setHorizontalHeaderLabels(head)
+            for session_number in range(len(sessions)):
+                film_id, date_iso, time_iso, hall_id = sessions[session_number]
+
+                film_name = cur.execute(
+                    '''SELECT name FROM films WHERE id = ?''', (film_id,)
+                ).fetchall()[0][0]
+
+                cinema_name = cur.execute(
+                    '''SELECT name FROM cinemas WHERE
+                     id = (SELECT cinema FROM halls WHERE id = ?)''', (hall_id,)
+                ).fetchall()[0][0]
+
+                hall_name = cur.execute(
+                    '''SELECT name FROM halls WHERE id = ?''', (hall_id,)
+                ).fetchall()[0][0]
+
+                self.sessions_table.setItem(session_number, 0, QTableWidgetItem(film_name))
+                self.sessions_table.setItem(session_number, 1, QTableWidgetItem(cinema_name))
+                self.sessions_table.setItem(session_number, 2, QTableWidgetItem(hall_name))
+                self.sessions_table.setItem(session_number, 3, QTableWidgetItem(date_iso))
+                self.sessions_table.setItem(session_number, 4, QTableWidgetItem(time_iso))
+
+            self.sessions_table.resizeColumnsToContents()
+
+        cur.close()
+        con.close()
 
     def open_session(self):
         pass
@@ -32,8 +73,8 @@ class Cinema(QMainWindow, Ui_MainWindow):
 
     def add_session(self):
         add_session_dialog = AddSessionDialog()
+        add_session_dialog.accepted.connect(self.load_data_base)
         add_session_dialog.exec()
-        add_session_dialog.finished.connect(self.load_data_base)
 
 
 class AddSessionDialog(QDialog, Ui_AddSessionDialog):
@@ -102,9 +143,38 @@ class AddSessionDialog(QDialog, Ui_AddSessionDialog):
     def click_button_box(self, btn):
         btn_text = btn.text()
         if btn_text == 'OK':
-            pass
+            cinema_name = self.cinema_combo_box.currentText()
+            hall_name = self.hall_combo_box.currentText()
+            film_name = self.film_combo_box.currentText()
+            date = self.data_edit.date().toPyDate().isoformat()
+            time = self.time_edit.time().toPyTime().isoformat()
+
+            if cinema_name and hall_name and film_name and date and time:
+                con = sqlite3.connect(data_base_path)
+                cur = con.cursor()
+
+                hall_id = cur.execute(
+                    '''SELECT id FROM halls WHERE
+                     cinema = (SELECT id FROM cinemas WHERE name = ?) AND
+                     name = ?''', (cinema_name, hall_name,)
+                ).fetchall()[0][0]
+
+                film_id = cur.execute(
+                    '''SELECT id FROM films WHERE name = ?''', (film_name,)
+                ).fetchall()[0][0]
+
+                cur.execute(
+                    '''INSERT INTO sessions(film, date, time, hall) VALUES (?, ?, ?, ?)''',
+                    (film_id, date, time, hall_id)
+                )
+
+                con.commit()
+                cur.close()
+                con.close()
+
+                self.accept()
         elif btn_text == 'Cancel':
-            pass
+            self.reject()
 
     def add_cinema(self):
         add_cinema_dialog = AddCinemaDialog()
@@ -208,6 +278,7 @@ class AddFilmDialog(QDialog, Ui_AdFilmDialog):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        self.setWindowTitle('Фильм')
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self.button_box.clicked.connect(self.click_button_box)
 
