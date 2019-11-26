@@ -1,4 +1,4 @@
-from docx import Document, styles
+from docx import Document
 from pptx import Presentation
 import xlsxwriter
 
@@ -76,10 +76,12 @@ class Cinema(QMainWindow, Ui_MainWindow):
                             )
                             last_month_data.append(current_session)
 
+                document = Document()
+
                 if last_month_data:
                     rows = len(last_month_data)
                     cols = len(last_month_data[0])
-                    document = Document()
+
                     style = document.styles
                     table = document.add_table(rows + 1, cols)
 
@@ -103,13 +105,64 @@ class Cinema(QMainWindow, Ui_MainWindow):
                         current_row[2].text = hall_name
                         current_row[3].text = date
                         current_row[4].text = time
-                    document.save(file)
+
+                document.save(file)
 
     def export_to_pptx(self):
         pass
 
     def export_to_xlsx(self):
-        pass
+        file = QFileDialog.getSaveFileName(self, 'Сохранить', '',
+                                           '''
+                                           Xlsx (*.xlsx);;
+                                           Xls (*xls)
+                                           ''')[0]
+        if file:
+            workbook = xlsxwriter.Workbook(file)
+            worksheet = workbook.add_worksheet()
+            chart = workbook.add_chart({'type': 'column'})
+
+            con = sqlite3.connect(data_base_path)
+            cur = con.cursor()
+
+            cinemas = cur.execute(
+                '''SELECT name FROM cinemas'''
+            ).fetchall()
+            cinemas = list(map(lambda data: data[0], cinemas))
+
+            for cinema_name, number_cinema in zip(cinemas, range(len(cinemas))):
+                hours_dict = dict.fromkeys(
+                    ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12',
+                     '13',
+                     '14', '15', '16', '17', '18', '19', '20', '21', '22', '23'], 0
+                )
+
+                sessions_current_cinema = cur.execute(
+                    '''SELECT hall, time FROM sessions WHERE
+                cinema = (SELECT id FROM cinemas WHERE name = ?)''', (cinema_name,)
+                ).fetchall()
+
+                for session in sessions_current_cinema:
+                    hall_bytes = session[0]
+                    time_iso = session[1]
+
+                    hall_array = pickle.loads(hall_bytes)
+                    buy_ticket_count = np.sum(hall_array)
+
+                    hour = time_iso.split(':')[0]
+
+                    hours_dict[hour] += buy_ticket_count
+
+                values = list(map(lambda data: data, hours_dict.values()))
+                worksheet.write(number_cinema, 0, cinema_name)
+                worksheet.write_row(number_cinema, 1, values)
+                chart.add_series({
+                    'values': ['Sheet1', number_cinema, 1, number_cinema, 22],
+                    'name': ['Sheet1', number_cinema, 0],
+                })
+
+            worksheet.insert_chart(len(cinemas), 0, chart)
+            workbook.close()
 
     def load_data_base(self):
         con = sqlite3.connect(data_base_path)
