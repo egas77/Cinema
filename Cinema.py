@@ -109,7 +109,35 @@ class Cinema(QMainWindow, Ui_MainWindow):
                 document.save(file)
 
     def export_to_pptx(self):
-        pass
+        file = QFileDialog.getSaveFileName(self, 'Сохранить', '',
+                                           '''Pptx (*.pptx)''')[0]
+        if file:
+            prs = Presentation()
+
+            con = sqlite3.connect(data_base_path)
+            cur = con.cursor()
+
+            films = cur.execute(
+                '''SELECT name, description FROM films'''
+            ).fetchall()
+
+            names_films = list(map(lambda data: data[0], films))
+            descriptions = list(map(lambda data: data[1], films))
+
+            slide_layout = prs.slide_layouts[1]
+
+            for number_film, names_film, description in zip(range(len(films)), names_films,
+                                                            descriptions):
+                slide = prs.slides.add_slide(slide_layout)
+
+                shapes = slide.shapes
+                title_shape = shapes.placeholders[0]
+                body_shape = shapes.placeholders[1]
+
+                title_shape.text = names_film
+                body_shape.text = description
+
+            prs.save(file)
 
     def export_to_xlsx(self):
         file = QFileDialog.getSaveFileName(self, 'Сохранить', '',
