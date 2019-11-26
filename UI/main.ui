@@ -62,8 +62,38 @@
      <height>21</height>
     </rect>
    </property>
+   <widget class="QMenu" name="menuFIle">
+    <property name="title">
+     <string>FIle</string>
+    </property>
+    <widget class="QMenu" name="menuExport">
+     <property name="title">
+      <string>Export</string>
+     </property>
+     <addaction name="action_docx"/>
+     <addaction name="action_xlsx"/>
+     <addaction name="action_pptx"/>
+    </widget>
+    <addaction name="menuExport"/>
+   </widget>
+   <addaction name="menuFIle"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
+  <action name="action_docx">
+   <property name="text">
+    <string>docx</string>
+   </property>
+  </action>
+  <action name="action_xlsx">
+   <property name="text">
+    <string>xlsx</string>
+   </property>
+  </action>
+  <action name="action_pptx">
+   <property name="text">
+    <string>pptx</string>
+   </property>
+  </action>
  </widget>
  <resources/>
  <connections/>

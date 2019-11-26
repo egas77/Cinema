@@ -1,11 +1,15 @@
+from docx import Document, styles
+from pptx import Presentation
+import xlsxwriter
+
 import sys
-import sqlite3
 import datetime
+import sqlite3
 import numpy as np
 import pickle
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QWidget, QTableWidgetItem
-from PyQt5.QtCore import Qt, QDate, QTime, QDateTime
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem, QFileDialog
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QPixmap
 from PIL import Image, ImageQt, ImageDraw, ImageFont
 
 from UI.ui_main import Ui_MainWindow
@@ -27,6 +31,85 @@ class Cinema(QMainWindow, Ui_MainWindow):
         self.add_sesion_btn.clicked.connect(self.add_session)
 
         self.sessions_table.cellClicked.connect(self.cell_click)
+
+        self.action_docx.triggered.connect(self.export_to_docx)
+        self.action_pptx.triggered.connect(self.export_to_pptx)
+        self.action_xlsx.triggered.connect(self.export_to_xlsx)
+
+    def export_to_docx(self):
+        file = QFileDialog.getSaveFileName(self, 'Сохранить', '', '''
+                                            Docx (*.docx);;
+                                            Doc (*.doc)''')[0]
+        if file:
+            con = sqlite3.connect(data_base_path)
+            cur = con.cursor()
+
+            data = cur.execute(
+                '''SELECT film, date, time, hall_name, cinema FROM sessions
+                ORDER BY date, time'''
+            ).fetchall()
+            if data:
+                today_date = datetime.date.today()
+                last_month_data = []
+                for session in data:
+                    film_id = session[0]
+                    date_iso = session[1]
+                    time_iso = session[2]
+                    hall_name = session[3]
+                    cinema_id = session[4]
+
+                    date = datetime.date.fromisoformat(date_iso)
+
+                    if today_date >= date:
+                        date_delta = today_date - date
+                        if date_delta.days < 30:
+                            film_name = cur.execute(
+                                '''SELECT name FROM films WHERE id = ?''', (film_id,)
+                            ).fetchone()[0]
+
+                            cinema_name = cur.execute(
+                                '''SELECT name FROM cinemas WHERE id = ?''', (cinema_id,)
+                            ).fetchone()[0]
+
+                            current_session = (
+                                film_name, cinema_name, hall_name, date_iso, time_iso
+                            )
+                            last_month_data.append(current_session)
+
+                if last_month_data:
+                    rows = len(last_month_data)
+                    cols = len(last_month_data[0])
+                    document = Document()
+                    style = document.styles
+                    table = document.add_table(rows + 1, cols)
+
+                    head_table = table.rows[0].cells
+                    head_table[0].text = 'Название фильма'
+                    head_table[1].text = 'Название кинотеатра'
+                    head_table[2].text = 'Название зала'
+                    head_table[3].text = 'Дата'
+                    head_table[4].text = 'Время'
+                    for count_session in range(len(last_month_data)):
+                        film_name = last_month_data[count_session][0]
+                        cinema_name = last_month_data[count_session][1]
+                        hall_name = last_month_data[count_session][2]
+                        date = last_month_data[count_session][3]
+                        time = last_month_data[count_session][4]
+
+                        current_row = table.rows[count_session + 1].cells
+
+                        current_row[0].text = film_name
+                        current_row[1].text = cinema_name
+                        current_row[2].text = hall_name
+                        current_row[3].text = date
+                        current_row[4].text = time
+                    document.save(file)
+
+    def export_to_pptx(self):
+        pass
+
+    def export_to_xlsx(self):
+        pass
 
     def load_data_base(self):
         con = sqlite3.connect(data_base_path)
@@ -147,6 +230,8 @@ class AddSessionDialog(QDialog, Ui_AddSessionDialog):
         self.init_films()
 
         self.cinema_combo_box.currentTextChanged.connect(self.init_halls)
+
+        self.data_edit.setDate(datetime.date.today())
 
     def init_cinemas(self):
         con = sqlite3.connect(data_base_path)
@@ -475,7 +560,7 @@ class DetailsSessionDialog(QDialog, Ui_DetalisSessionDialog):
                     draw.line([(x, y + height_text - 1), (x + max_width_text_col - 1, y)],
                               fill=(255, 0, 0))
 
-        image = image.crop((0, 0, *size_img))
+        image = image.crop((0, 0, size_img[0] + 1, size_img[1] + 1))
 
         image_qt = ImageQt.ImageQt(image)
         pixmap = QPixmap.fromImage(image_qt)
