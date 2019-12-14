@@ -82,7 +82,6 @@ class Cinema(QMainWindow, Ui_MainWindow):
                     rows = len(last_month_data)
                     cols = len(last_month_data[0])
 
-                    style = document.styles
                     table = document.add_table(rows + 1, cols)
 
                     head_table = table.rows[0].cells
@@ -540,7 +539,7 @@ class DetailsSessionDialog(QDialog, Ui_DetalisSessionDialog):
         super().__init__()
         self.setupUi(self)
         self.id_session = id_session
-        self.size_font = 30
+        self.size_font = 75
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self.buy_ticket_btn.clicked.connect(self.buy_ticket)
 
@@ -605,7 +604,7 @@ class DetailsSessionDialog(QDialog, Ui_DetalisSessionDialog):
         height_text = self.size_font
         max_width_text_row, max_width_text_col = 0, 0
 
-        image = Image.new('RGB', (1000, 1000))
+        image = Image.new('RGB', (5000, 5000))
         draw = ImageDraw.Draw(image)
 
         shape = hall_array.shape
@@ -633,13 +632,14 @@ class DetailsSessionDialog(QDialog, Ui_DetalisSessionDialog):
         for x, col in zip(range(max_width_text_row, size_img[0], max_width_text_col),
                           range(shape[1])):
             for y, row in zip(range(height_text, size_img[1], height_text), range(shape[0])):
-                draw.rectangle([(x, y), (x + max_width_text_col - 1, y + height_text - 1)])
+
                 elem = hall_array[row][col]
                 if elem == 1:
-                    draw.line([(x, y), (x + max_width_text_col - 1, y + height_text - 1)],
-                              fill=(255, 0, 0))
-                    draw.line([(x, y + height_text - 1), (x + max_width_text_col - 1, y)],
-                              fill=(255, 0, 0))
+                    draw.rectangle([(x, y), (x + max_width_text_col - 1, y + height_text - 1)],
+                                   width=2, fill=(255, 0, 0), outline=(255, 255, 255))
+                else:
+                    draw.rectangle([(x, y), (x + max_width_text_col - 1, y + height_text - 1)],
+                                   width=2)
 
         image = image.crop((0, 0, size_img[0] + 1, size_img[1] + 1))
 
